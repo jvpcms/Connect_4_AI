@@ -13,7 +13,7 @@ class connect_4 {
         char** board;
         char piece_1 = 'X';
         char piece_2 = 'O';
-        char space = '+';
+        char space = char(250);
 
         char divider_horiz = ' ';
 
