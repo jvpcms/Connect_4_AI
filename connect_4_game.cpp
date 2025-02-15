@@ -1,10 +1,14 @@
 #include<bits/stdc++.h>
 #include <chrono>
-#include <windows.h>
 using namespace std;
 
 // by jvpcms
 
+enum class Strategy {
+    Strategic,
+    Random,
+    Heuristic
+};
 
 class connect_4 {
 
@@ -13,7 +17,7 @@ class connect_4 {
         char** board;
         char piece_1 = 'X';
         char piece_2 = 'O';
-        char space = char(250);
+        char space = '*';
 
         char divider_horiz = ' ';
 
@@ -21,9 +25,8 @@ class connect_4 {
 
         int made_moves = 0;
 
-        bool strategic_opponent = false;
         int MIN_INF = -2, MAX_INF = 2;
-        const int MAX_DEPTH = 10;
+        const int MAX_DEPTH = 8;
         vector<int> check_order;
 
     public:
@@ -73,21 +76,16 @@ class connect_4 {
 
         void display_board() {
 
-            HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
+            /*HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);*/
 
             for (int i = 0; i < this->n; i++) {
                 for (int j = 0; j < this->m; j++) {
-
-                    if (this->board[i][j] == this->piece_1) SetConsoleTextAttribute(hConsole, 12);
-                    else if (this->board[i][j] == this->piece_2) SetConsoleTextAttribute(hConsole, 9);
-                    
                     cout << this->board[i][j] << this->divider_horiz;
-
-                    SetConsoleTextAttribute(hConsole, 15);
                 }
                 
                 cout << '\n';
             }
+            cout << '\n';
         }
 
         void reset_board() {
@@ -104,7 +102,7 @@ class connect_4 {
         }
 
         bool is_valid_move(int col) {
-            return this->board[0][col] == this->space and col >= 0 and col < this->m;
+            return col >= 0 && col < this->m && this->board[0][col] == this->space;
         }
 
         void place_piece(int col) {
@@ -199,10 +197,32 @@ class connect_4 {
         }
 
         void bot_random_move() {
-            int col = rand() % this->m;
-            while (!is_valid_move(col)) col = rand() % this->m;
+            int free_cols = 0;
 
-            place_piece(col);
+            for (int col = 0; col < this->m; col++) {
+                if (is_valid_move(col)) free_cols++;
+            }
+
+            int ord_picked_col = rand() % free_cols;
+
+            for (int col = 0; col < this->m; col++) {
+                if (is_valid_move(col)) {
+                    if (ord_picked_col == 0) {
+                        place_piece(col);
+                        return;
+                    }
+                    ord_picked_col--;
+                }
+            }
+        }
+
+        void bot_heuristic_move() {
+            for (int col : this->check_order) {
+                if (is_valid_move(col)) {
+                    place_piece(col);
+                    return;
+                }
+            }
         }
 
         int minimax(char **board, int depth, int alpha, int beta, bool isMaximizing) {
@@ -284,18 +304,22 @@ class connect_4 {
   
         }
 
-        void play() {
+        void play_bot_vs_user() {
             
-            cout << "Who do you want to play against? (s - Strategic / r - Random): ";
+            cout << "Who do you want to play against? (s - Strategic / r - Random / h - heuristic): ";
             char choice; cin >> choice; cout << '\n';
 
-            if (choice == 's') this->strategic_opponent = true;
+            std::function<void()> opp_move;
+
+            if (choice == 's') opp_move = [this]() { this->bot_strategic_move(); };
+            else if (choice == 'r') opp_move = [this]() { this->bot_random_move(); };
+            else opp_move = [this]() { this->bot_heuristic_move(); };
 
             reset_board();
 
             while (!board_is_full()) {
-
-                (this->strategic_opponent) ? bot_strategic_move() : bot_random_move();
+                
+                opp_move();
 
                 display_board();
 
@@ -321,32 +345,45 @@ class connect_4 {
             return;
         }
 
-        int play_bot_vs_bot(int tests=1) {
-
-            // Expected:
-            // strategic vs random: mostly wins, some draws
-            // random vs random: wins and defeats close to 50%, some draws
-            // strategic vs strategic: mostly draws
-            // random vs strategic: mostly defeats, some draws, almost no victories
+        int play_bot_vs_bot(int tests=1, Strategy strategy1=Strategy::Strategic, Strategy strategy2=Strategy::Random) {
 
             int victory = 0, defeat = 0, draw = 0;
 
             auto start = chrono::high_resolution_clock::now();
 
+            std::function<void()> bot_move;
+            std::function<void()> opp_move;
+
+            if (strategy1 == Strategy::Strategic)
+                bot_move = [this]() { this->bot_strategic_move(); };
+            else if (strategy1 == Strategy::Random)
+                bot_move = [this]() { this->bot_random_move(); };
+            else
+                bot_move = [this]() { this->bot_heuristic_move(); };
+
+            if (strategy2 == Strategy::Strategic)
+                opp_move = [this]() { this->bot_strategic_move(); };
+            else if (strategy2 == Strategy::Random)
+                opp_move = [this]() { this->bot_random_move(); };
+            else
+                opp_move = [this]() { this->bot_heuristic_move(); };
+
             for (int i = 0; i < tests; i++) {
+
+                cout << '\n' << "Test " << i + 1 << '\n';
                 
                 reset_board();
 
                 while (!board_is_full()) {
 
-                    bot_strategic_move();
+                    bot_move();
 
                     if (check_win()) {victory++; break;}
                     next_player();
 
                     if (board_is_full()) break;
 
-                    bot_random_move();
+                    opp_move();
 
                     if (check_win()) {defeat++; break;}
                     next_player();
@@ -358,9 +395,9 @@ class connect_4 {
             auto end = chrono::high_resolution_clock::now();
             auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
 
-            cout << '\n' << "Victories: " << victory;
-            cout << '\n' << "Defeats: " << defeat;
-            cout << '\n' << "Draws: " << draw;
+            cout << '\n' << "Victories: " << victory << " (" << (float)victory / tests * 100 << "%)";
+            cout << '\n' << "Defeats: " << defeat << " (" << (float)defeat / tests * 100 << "%)";
+            cout << '\n' << "Draws: " << draw << " (" << (float)draw / tests * 100 << "%)";
 
             cout << '\n' << "Time: " << duration.count() << " ms";
 
@@ -375,7 +412,8 @@ int main() {
     srand(time(NULL));
 
     connect_4 game(6, 7);
-    game.play();
+    game.play_bot_vs_bot();
+    /*game.play_bot_vs_user();*/
 
     return 0;
 }
